@@ -2224,18 +2224,19 @@ if not hasattr(typing, "TypeVarTuple"):
     typing._check_generic = _check_generic
 
 
+def _caller():
+    try:
+        return sys._getframe(2).f_globals.get('__name__', '__main__')
+    except (AttributeError, ValueError):  # For platforms without _getframe()
+        return None
+
+
 # Backport typing.NamedTuple as it exists in Python 3.11.
 # In 3.11, the ability to define generic `NamedTuple`s was supported.
 # This was explicitly disallowed in 3.9-3.10, and only half-worked in <=3.8.
 if sys.version_info >= (3, 11):
     NamedTuple = typing.NamedTuple
 else:
-    def _caller():
-        try:
-            return sys._getframe(2).f_globals.get('__name__', '__main__')
-        except (AttributeError, ValueError):  # For platforms without _getframe()
-            return None
-
     def _make_nmtuple(name, types, module, defaults=()):
         fields = [n for n, t in types]
         annotations = {n: typing._type_check(t, f"field {n} annotation must be a type")
@@ -2340,3 +2341,76 @@ else:
     Buffer.register(memoryview)
     Buffer.register(bytearray)
     Buffer.register(bytes)
+
+class _TypedMappingBase:
+    def __init_subclass__(cls, total=True):
+        """Create new typed dict class object.
+
+        This method is called when TypedDict is subclassed,
+        or when TypedDict is instantiated. This way
+        TypedDict supports all three syntax forms described in its docstring.
+        Subclasses and instances of TypedDict return actual dictionaries.
+        """
+        annotations = {}
+        own_annotations = cls.__annotations__
+        msg = "TypedDict('Name', {f0: t0, f1: t1, ...}); each t must be a type"
+        own_annotations = {
+            n: typing._type_check(tp, msg, module=cls.__module__)
+            for n, tp in own_annotations.items()
+        }
+        required_keys = set()
+        optional_keys = set()
+
+        for base in cls.mro():
+            if base is cls:
+                continue
+            annotations.update(base.__dict__.get('__annotations__', {}))
+            required_keys.update(base.__dict__.get('__required_keys__', ()))
+            optional_keys.update(base.__dict__.get('__optional_keys__', ()))
+
+        annotations.update(own_annotations)
+        for annotation_key, annotation_type in own_annotations.items():
+            annotation_origin = get_origin(annotation_type)
+            if annotation_origin is Annotated:
+                annotation_args = get_args(annotation_type)
+                if annotation_args:
+                    annotation_type = annotation_args[0]
+                    annotation_origin = get_origin(annotation_type)
+
+            if annotation_origin is Required:
+                required_keys.add(annotation_key)
+            elif annotation_origin is NotRequired:
+                optional_keys.add(annotation_key)
+            elif total:
+                required_keys.add(annotation_key)
+            else:
+                optional_keys.add(annotation_key)
+
+        cls.__annotations__ = annotations
+        cls.__required_keys__ = frozenset(required_keys)
+        cls.__optional_keys__ = frozenset(optional_keys)
+        if not hasattr(cls, '__total__'):
+            cls.__total__ = total
+
+    __call__ = dict  # static method
+
+    def __subclasscheck__(cls, other):
+        # Typed dicts are only for static structural subtyping.
+        raise TypeError('TypedDict does not support instance and class checks')
+
+    __instancecheck__ = __subclasscheck__
+
+
+def TypedMapping(typename, __fields, *, total=True):
+    """A simple typed mapping."""
+    ns = {'__annotations__': dict(__fields)}
+    module = _caller()
+    if module is not None:
+        # Setting correct module is necessary to make typed dict classes pickleable.
+        ns['__module__'] = module
+
+    td = type(typename, (_TypedMappingBase,), ns, total=total)
+    td.__orig_bases__ = (TypedMapping,)
+    return td
+
+TypedMapping.__mro_entries__ = lambda bases: (_TypedMappingBase,)
