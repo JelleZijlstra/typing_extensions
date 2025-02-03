@@ -4854,6 +4854,10 @@ class TypedDictTests(BaseTestCase):
         self.assertEqual(ChildA.__extra_items__, Never)
         self.assertTrue(ChildA.__closed__)
 
+    @skipIf(TYPING_3_14_0, "Backwards compatibility only for Python 3.13")
+    def test_implicit_extra_items_before_3_14(self):
+        class Base(TypedDict):
+            a: int
         class ChildB(Base, closed=True):
             __extra_items__: None
 
