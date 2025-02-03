@@ -971,7 +971,10 @@ else:
                 break
 
     class _TypedDictMeta(type):
-        def __new__(cls, name, bases, ns, *, total=True, closed=None, extra_items=NoExtraItems):
+
+        def __new__(
+            cls, name, bases, ns, *, total=True, closed=None, extra_items=NoExtraItems
+        ):
             """Create new typed dict class object.
 
             This method is called when TypedDict is subclassed,
@@ -985,8 +988,6 @@ else:
                                     'and a non-TypedDict base class')
             if closed is not None and extra_items is not NoExtraItems:
                 raise TypeError(f"Cannot combine closed={closed!r} and extra_items")
-            elif closed is None:
-                closed = False
 
             if any(issubclass(b, typing.Generic) for b in bases):
                 generic_base = (typing.Generic,)
@@ -1036,7 +1037,7 @@ else:
                 optional_keys.update(base_dict.get('__optional_keys__', ()))
                 readonly_keys.update(base_dict.get('__readonly_keys__', ()))
                 mutable_keys.update(base_dict.get('__mutable_keys__', ()))
-                if getattr(base, "__closed__", False) and not closed:
+                if getattr(base, "__closed__", None) and not closed:
                     if sys.version_info < (3, 14):
                         # PEP 728 wants this to be an error, but that is not
                         # compatible with previous versions of typing-extensions.
@@ -1054,7 +1055,10 @@ else:
             # This was specified in an earlier version of PEP 728. Support
             # is retained for backwards compatibility, but only for Python 3.13
             # and lower.
-            if closed and sys.version_info < (3, 14) and "__extra_items__" in own_annotations:
+            if (
+                closed
+                and sys.version_info < (3, 14) and "__extra_items__" in own_annotations
+            ):
                 annotation_type = own_annotations.pop("__extra_items__")
                 qualifiers = set(_get_typeddict_qualifiers(annotation_type))
                 if Required in qualifiers:
@@ -1116,7 +1120,7 @@ else:
         /,
         *,
         total=True,
-        closed=False,
+        closed=None,
         extra_items=NoExtraItems,
         **kwargs
     ):
@@ -1180,7 +1184,7 @@ else:
             ) + example + "."
             warnings.warn(deprecation_msg, DeprecationWarning, stacklevel=2)
             # Support a field called "closed"
-            if closed is not False and closed is not True:
+            if closed not in (False, True, None):
                 kwargs["closed"] = closed
                 closed = None
             # Or "extra_items"
@@ -1208,7 +1212,9 @@ else:
             # Setting correct module is necessary to make typed dict classes pickleable.
             ns['__module__'] = module
 
-        td = _TypedDictMeta(typename, (), ns, total=total, closed=closed, extra_items=extra_items)
+        td = _TypedDictMeta(
+            typename, (), ns, total=total, closed=closed, extra_items=extra_items
+        )
         td.__orig_bases__ = (TypedDict,)
         return td
 
