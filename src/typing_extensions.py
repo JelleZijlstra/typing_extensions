@@ -1188,7 +1188,7 @@ else:
             ) + example + "."
             warnings.warn(deprecation_msg, DeprecationWarning, stacklevel=2)
             # Support a field called "closed"
-            if closed not in (False, True, None):
+            if closed is not False and closed is not True and closed is not None:
                 kwargs["closed"] = closed
                 closed = None
             # Or "extra_items"
